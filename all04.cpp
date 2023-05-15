@@ -168,45 +168,47 @@ SimdMul( float *a, float *b,   float *c,   int len )
 
 
 
-float
-SimdMulSum( float *a, float *b, int len )
+float SimdMulSum(float *a, float *b, int len)
 {
-	float sum[4] = { 0., 0., 0., 0. };
-	int limit = ( len/SSE_WIDTH ) * SSE_WIDTH;
+    float sum[4] = {0.0, 0.0, 0.0, 0.0};
+    int limit = (len / SSE_WIDTH) * SSE_WIDTH;
 
-	__asm
-	(
-		".att_syntax\n\t"
-		"movq    -40(%rbp), %r8\n\t"		// a
-		"movq    -48(%rbp), %rcx\n\t"		// b
-		"leaq    -32(%rbp), %rdx\n\t"		// &sum[0]
-		"movups	 (%rdx), %xmm2\n\t"		// 4 copies of 0. in xmm2
-	);
+    __asm__ volatile
+    (
+        "movups (%0), %%xmm2\n" // load xmm2 with initial sum values
+        :
+        : "r" (sum) // input: sum array
+        : "%xmm2" // xmm2 is clobbered
+    );
 
-	for( int i = 0; i < limit; i += SSE_WIDTH )
-	{
-		__asm
-		(
-			".att_syntax\n\t"
-			"movups	(%r8), %xmm0\n\t"	// load the first sse register
-			"movups	(%rcx), %xmm1\n\t"	// load the second sse register
-			"mulps	%xmm1, %xmm0\n\t"	// do the multiply
-			"addps	%xmm0, %xmm2\n\t"	// do the add
-			"addq $16, %r8\n\t"
-			"addq $16, %rcx\n\t"
-		);
-	}
+    for (int i = 0; i < limit; i += SSE_WIDTH)
+    {
+        __asm__ volatile
+        (
+            "movups (%0), %%xmm0\n" // load the first sse register
+            "movups (%1), %%xmm1\n" // load the second sse register
+            "mulps %%xmm1, %%xmm0\n" // do the multiply
+            "addps %%xmm0, %%xmm2\n" // do the add
+            :
+            : "r" (&a[i]), "r" (&b[i]) // input: pointers to a[i] and b[i]
+            : "%xmm0", "%xmm1", "%xmm2" // xmm0, xmm1, xmm2 are clobbered
+        );
+    }
 
-	__asm
-	(
-		".att_syntax\n\t"
-		"movups	 %xmm2, (%rdx)\n\t"	// copy the sums back to sum[ ]
-	);
+    __asm__ volatile
+    (
+        "movups %%xmm2, (%0)\n" // copy the sums back to sum[]
+        :
+        : "r" (sum) // output: sum array
+        : "%xmm2" // xmm2 is clobbered
+    );
 
-	for( int i = limit; i < len; i++ )
-	{
-		sum[0] += a[i] * b[i];
-	}
+    float totalSum = sum[0] + sum[1] + sum[2] + sum[3];
+    for (int i = limit; i < len; i++)
+    {
+        totalSum += a[i] * b[i];
+    }
 
-	return sum[0] + sum[1] + sum[2] + sum[3];
+    return totalSum;
 }
+
